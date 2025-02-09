@@ -5,15 +5,20 @@ import {
     type Memory,
     type State,
     type Action,
+    VerifiableInferenceOptions
 } from "@elizaos/core";
-import feedparser from "feedparser-promised";
+import axios from 'axios';
+import { XMLParser } from 'fast-xml-parser';
+import * as cheerio from 'cheerio';
+import { Content } from "@elizaos/core";
+import { OpacityAdapter } from "@elizaos/adapter-opacity";
+
 export interface NewsItem {
     title: string;
     link: string;
+    image: string;
     description: string;
 }
-import axios from 'axios';
-import { XMLParser } from 'fast-xml-parser';
 
 export async function fetchCointelegraphRSS(): Promise<NewsItem[]> {
     try {
@@ -29,11 +34,18 @@ export async function fetchCointelegraphRSS(): Promise<NewsItem[]> {
             throw new Error('Invalid RSS format');
         }
 
-        const newsData: NewsItem[] = items.map(item => ({
-            title: item.title,
-            link: item.link,
-            description: item.description
-        }));
+        const newsData: NewsItem[] = items.map(item => {
+            const $ = cheerio.load(item.description);
+            const lastParagraph = $('p').last().text().replace(/'/g, '').trim();
+            const imageUrl = $('img').attr('src')?.replace(/'/g, '').trim() || '';
+
+            return {
+                title: item.title.replace(/'/g, '').trim(),
+                link: item.link.replace(/'/g, '').trim(),
+                image: imageUrl,
+                description: lastParagraph
+            };
+        });
 
         return newsData;
     } catch (error) {
@@ -41,16 +53,21 @@ export async function fetchCointelegraphRSS(): Promise<NewsItem[]> {
         return [];
     }
 }
-export const getLastedNews: Action = {
-    name: "getLastedNews",
+export default {
+    name: "NEWS",
     description: "Fetch the latest news from Cointelegraph",
     similes: [
         "NEWS",
-        "BREAKING NEWS",
-        "CRYPTO NEWS",
-        "LATESTED CRYPTO NEWS",
-        "GET NEWS",
-        "FETCH NEWS",
+        "BREAKING_NEWS",
+        "CRYPTO_NEWS",
+        "LATESTED_CRYPTO NEWS",
+        "GET_NEWS",
+        "FETCH_NEWS",
+        "NEWS_FEED",
+        "NEWS_ARTICLES",
+        "NEWS_SUMMARY",
+        "MORNING_NEWS",
+        "CRYPTO_ARTICLES",
     ],
     validate: async (runtime: IAgentRuntime, _message: Memory) => {
         // Add any necessary validation logic here
@@ -65,24 +82,32 @@ export const getLastedNews: Action = {
     ): Promise<boolean> => {
         elizaLogger.log("Starting CoinTelegraph getLastedNews handler...");
 
-        // // Initialize or update state
-        // let currentState = state;
-        // if (!currentState) {
-        //     currentState = (await runtime.composeState(message)) as State;
-        // } else {
-        //     currentState = await runtime.updateRecentMessageState(currentState);
-        // }
-
         try {
+            
             // Fetch the latest news
             const news: NewsItem[] = await fetchCointelegraphRSS();
-            const newsContent = news.map((item: NewsItem) => `${item.title}: ${item.description} \n ${item.link}`).join("\n");
-
+            console.log('news example', news[0]);
+            const newsContent = news.map((item: NewsItem, index: number) => `${index + 1}. [${item.title}](${item.link}): ${item.description} \n ${item.image}`).join("\n");
+            const responseText = `Here are the latest news articles from Cointelegraph:\n${newsContent}`;
             elizaLogger.success("News fetched successfully!");
+
+            const newMemory: Memory = {
+                userId: message.userId,
+                agentId: message.agentId,
+                roomId: message.roomId,
+                content: {
+                    text: responseText,
+                    action: "NEWS",
+                    source:message.content.source
+
+                } as Content
+        };
+
+        await runtime.messageManager.createMemory(newMemory);
 
             if (callback) {
                 callback({
-                    text: newsContent,
+                    text: responseText,
                     content: news,
                 });
             }
@@ -113,12 +138,6 @@ export const getLastedNews: Action = {
                 action: "getLastedNews",
             },
         },
-        {
-            user: "{{agent}}",
-            content: {
-                text: "Here are the latest news articles from Cointelegraph:\n1. Title 1: Link 1\n2. Title 2: Link 2\n3. Title 3: Link 3\n4. Title 4: Link 4\n5. Title 5: Link 5",
-            },
-        },
     ],
     [
         {
@@ -131,16 +150,16 @@ export const getLastedNews: Action = {
             user: "{{agent}}",
             content: {
                 text: "Fetching the latest news from Cointelegraph for you.",
-                action: "getLastedNews",
+                action: "NEWS",
             },
         },
         {
             user: "{{agent}}",
             content: {
-                text: "Here are the latest news articles from Cointelegraph:\n1. Title 1: Link 1\n2. Title 2: Link 2\n3. Title 3: Link 3\n4. Title 4: Link 4\n5. Title 5: Link 5",
+                text: "Here are the latest news articles from Cointelegraph:\n1. Summarise description 1: Image 1\n2. Summarise description 2: Image 2\n3. Summarise description 3: Image 3"
             },
         },
     ]]
-}
+} as Action;
 
-export default getLastedNews;
+//export default getLastedNews;

@@ -26,3 +26,8 @@ export interface ApiResponse {
         };
     };
 }
+export interface NewsItem {
+    title: string;
+    link: string;
+    description: string;
+}
